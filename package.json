@@ -1,0 +1,30 @@
+{
+  "name": "tictac",
+  "version": "1.0.0",
+  "description": "Real-time multiplayer tic-tac-toe.",
+  "main": "dist/all.min.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "Xs and Os",
+    "tic tac toe",
+    "game"
+  ],
+  "author": "rileyjshaw",
+  "license": "BSD-2-Clause",
+  "devDependencies": {
+    "gulp": "~3.5.2",
+    "gulp-rename": "~1.1.0",
+    "gulp-autoprefixer": "0.0.6",
+    "gulp-uglify": "~0.2.1",
+    "gulp-minify-css": "~0.3.0",
+    "gulp-strip-debug": "~0.1.1",
+    "gulp-jshint": "~1.4.2",
+    "gulp-concat": "~2.1.7",
+    "gulp-ruby-sass": "~0.3.1"
+  },
+  "dependencies": {
+    "socket.io": "^1.2.0"
+  }
+}
