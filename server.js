@@ -33,48 +33,50 @@ Game.prototype.move = function (square, player) {
   });
 }
 
-var rooms = [{
-  users: 0
-}];
+var lobby = [];
+var games = {};
+
+// TODO
+setTimeout(function () {
+  var p1, p2;
+  while (lobby.length > 1) {
+    p1 = lobby.shift();
+    p2 = lobby.shift();
+  }
+});
 
 io.on('connection', function (socket) {
-  var room = rooms.length - 1;
-  var roomLength = rooms[room].users;
-  var player;
-
-  // create a new room if the last one is full
-  if (roomLength === 2) {
-    room = rooms.push({
-      users: 0
-    }) - 1;
-  }
-
-  rooms[room].users++;
-  socket.join(room);
-
-  // if they're the second person to join the room
-  if (roomLength === 1) {
+  var player, opponent, roomId;
+  if (lobby.length) {
+    opponent = lobby.pop();
+    roomId = opponent.roomId;
     player = 'O';
-    socket.emit('setPlayer', player);
-    rooms[room].game = new Game();
-    io.to(room).emit('startGame');
+    socket.join(roomId);
+    opponent.socket.join(roomId);
+    games[roomId] = new Game();
+    io.to(roomId).emit('startGame');
   } else {
     player = 'X';
-    socket.emit('setPlayer', player);
+    roomId = Math.random();
+    lobby.push({
+      socket: socket,
+      roomId: roomId
+    });
   }
 
+  socket.emit('setPlayer', player);
+
   socket.on('move', function (square) {
-    var result = rooms[room].game.move(square, player);
+    var result = games[roomId].move(square, player);
     if (result) {
-      rooms[room].game.init();
+      games[roomId].init();
     }
-    io.to(room).emit('moveAck', result, square, player);
+    io.to(roomId).emit('moveAck', result, square, player);
   });
 
   socket.on('disconnect', function() {
-    io.to(room).emit('boot');
-/*
-    var i = allClients.indexOf(socket);
-    delete allClients[i];
-*/  });
+    games[roomId] = undefined;
+    // TODO
+    io.to(roomId).emit('boot');
+  });
 });
