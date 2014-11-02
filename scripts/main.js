@@ -119,13 +119,14 @@
     player = character;
   });
 
-  socket.on('moveAck', function (result, square, player) {
+  socket.on('moveAck', function (result, square, mover) {
     if (result !== null) {
-      drawPlayer(square, player);
+      drawPlayer(square, mover);
       if (result) {
-        drawMessage('Team ' + player + ' won!');
+        drawMessage('Team ' + mover + ' won!');
         ctx.clearRect(0, 0, width, height);
-        (player === 'X' ? score1 : score2).innerText = ++scores[player];
+        (mover === 'X' ? score1 : score2).innerText = ++scores[mover];
+        (mover === player ? winSound : loseSound).play();
         setTimeout(countdown, 1000);
       }
     }
@@ -143,6 +144,14 @@
   var playerRadius = 40;
   ctx.lineWidth = bgCtx.lineWidth = 8;
   ctx.strokeStyle = bgCtx.strokeStyle = '#336ACD';
+
+  var winSound = new Howl({
+    urls: ['dist/win.mp3', 'dist/win.ogg', 'dist/win.wav']
+  });
+
+  var loseSound = new Howl({
+    urls: ['dist/lose.mp3', 'dist/lose.ogg', 'dist/lose.wav']
+  });
 
   bgCtx.beginPath();
 

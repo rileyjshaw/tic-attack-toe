@@ -1,0 +1,9 @@
+{
+  "name": "tictac",
+  "version": "1.0.0",
+  "description": "Real-time multiplayer tic-tac-toe.",
+  "main": "dist/all.min.js",
+  "dependencies": {
+    "howler": "~1.1.25"
+  }
+}

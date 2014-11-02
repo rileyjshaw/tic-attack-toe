@@ -11,9 +11,10 @@ var
 
 var paths = {
   src: {
-    plugins: 'scripts/plugins/*.js',
+    plugins: 'bower_components/howler/howler.min.js',
     scripts: 'scripts/main.js',
-    stylesheets: 'stylesheets/*.sass'
+    stylesheets: 'stylesheets/*.sass',
+    static: 'static/*'
   }
 };
 
@@ -29,7 +30,7 @@ gulp.task('scripts', function() {
     .pipe(concat('all.js'))
     .pipe(gulp.dest('dist'))
     .pipe(rename('all.min.js'))
-    //.pipe(uglify( { outSourceMap: true } ))
+    .pipe(uglify( { outSourceMap: true } ))
     .pipe(gulp.dest('dist'));
 });
 
@@ -41,9 +42,14 @@ gulp.task('sass', function () {
     .pipe(gulp.dest('dist'))
 });
 
+gulp.task('static', function () {
+  return gulp.src(paths.src.static)
+    .pipe(gulp.dest('dist'))
+});
+
 gulp.task('watch', function() {
   gulp.watch(paths.src.scripts, ['lint', 'scripts']);
   gulp.watch(paths.src.stylesheets, ['sass']);
 });
 
-gulp.task('default', ['lint', 'scripts', 'sass', 'watch']);
+gulp.task('default', ['lint', 'scripts', 'sass', 'static', 'watch']);
