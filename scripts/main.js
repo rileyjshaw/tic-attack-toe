@@ -62,7 +62,10 @@
       if (typeof message === 'string') {
         if (messageContainer.className) messageContainer.className = '';
         messageContainer.textContent = message;
-      } else messageContainer.className = 'noMessage';
+      } else {
+        ctx.clearRect(0, 0, width, height);
+        messageContainer.className = 'noMessage';
+      }
   }
 
   function drawPlayer (i, player) {
@@ -91,46 +94,18 @@
     var y = Math.floor(coords.y * 3 / height);
     var i = x + y * 3;
     var clickTime = new Date().getTime();
-    socket.emit('move', i);
+    socket.emit('move', i, player);
   }
 
-  function countdown (n) {
+  function countdown (first, n) {
     n = n || 3;
     (function step () {
       if (n) {
-        drawMessage('Starting round in ' + n--);
-        setTimeout(step, 400);
+        drawMessage((first ? 'Starting ' : 'Re') + 'match in ' + n--);
+        nextStep = setTimeout(step, 300);
       } else drawMessage();
     })();
   }
-
-  var socket = io('http://localhost:8090');
-  var player;
-  var scores = {
-    X: 0,
-    O: 0
-  };
-
-  socket.on('startGame', function () {
-    countdown();
-  });
-
-  socket.on('setPlayer', function (character) {
-    player = character;
-  });
-
-  socket.on('moveAck', function (result, square, mover) {
-    if (result !== null) {
-      drawPlayer(square, mover);
-      if (result) {
-        drawMessage('Team ' + mover + ' won!');
-        ctx.clearRect(0, 0, width, height);
-        (mover === 'X' ? score1 : score2).innerText = ++scores[mover];
-        (mover === player ? winSound : loseSound).play();
-        setTimeout(countdown, 1000);
-      }
-    }
-  });
 
   var scoreContainer = document.getElementById('scores');
   var scoreX = document.getElementById('score1');
@@ -151,6 +126,39 @@
 
   var loseSound = new Howl({
     urls: ['dist/lose.mp3', 'dist/lose.ogg', 'dist/lose.wav']
+  });
+
+  var socket = io('http://localhost:8090');
+  var player;
+  var nextStep;
+  var scores = {
+    X: 0,
+    O: 0
+  };
+
+  socket.on('startGame', function () {
+    countdown(true);
+  });
+
+  socket.on('setPlayer', function (character) {
+    player = character;
+  });
+
+  socket.on('moveAck', function (result, square, mover) {
+    if (result !== null) {
+      drawPlayer(square, mover);
+      if (result) {
+        drawMessage('Team ' + mover + ' won!');
+        (mover === 'X' ? scoreX : scoreO).innerText = ++scores[mover];
+        (mover === player ? winSound : loseSound).play();
+        nextStep = setTimeout(countdown, 1000);
+      }
+    }
+  });
+
+  socket.on('boot', function () {
+    clearTimeout(nextStep);
+    drawMessage('Waiting for opponent');
   });
 
   bgCtx.beginPath();

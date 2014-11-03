@@ -4,7 +4,7 @@ var io = require('socket.io')(8090);
 // represented as 9 bits
 var wins = [0007, 0070, 0700, 0111, 0222, 0444, 0124, 0421];
 
-function Game () {
+function Game (p1, p2) {
   this.init = function () {
     // records which squares are already taken
     this.moves = new Array(9);
@@ -15,7 +15,9 @@ function Game () {
       X: 0,
       O: 0
     };
-  }
+
+    this.players = [p1, p2];
+  };
 
   this.init();
 }
@@ -31,52 +33,76 @@ Game.prototype.move = function (square, player) {
   return wins.some(function (win) {
     return (mask & win) === win;
   });
-}
+};
 
 var lobby = [];
 var games = {};
 
-// TODO
+function createMatch (p1, p2) {
+  var roomId = Math.random();
+  games[roomId] = new Game(p1, p2);
+  p1.join(roomId);
+  p2.join(roomId);
+  p1.ticTacRoomId = p2.ticTacRoomId = roomId;
+  p1.emit('setPlayer', 'X');
+  p2.emit('setPlayer', 'O');
+  io.to(roomId).emit('startGame');
+}
+
 setTimeout(function () {
   var p1, p2;
   while (lobby.length > 1) {
-    p1 = lobby.shift();
-    p2 = lobby.shift();
+    p1 = lobby.pop();
+    p2 = lobby.pop();
+    createMatch(p1, p2);
   }
-});
+}, 6000);
 
 io.on('connection', function (socket) {
-  var player, opponent, roomId;
-  if (lobby.length) {
-    opponent = lobby.pop();
-    roomId = opponent.roomId;
-    player = 'O';
-    socket.join(roomId);
-    opponent.socket.join(roomId);
-    games[roomId] = new Game();
-    io.to(roomId).emit('startGame');
-  } else {
-    player = 'X';
-    roomId = Math.random();
-    lobby.push({
-      socket: socket,
-      roomId: roomId
-    });
-  }
+  if (lobby.length) createMatch(lobby.pop(), socket);
+  else lobby.unshift(socket);
 
-  socket.emit('setPlayer', player);
-
-  socket.on('move', function (square) {
-    var result = games[roomId].move(square, player);
-    if (result) {
-      games[roomId].init();
+  socket.on('move', function (square, player) {
+    var game, result, roomId = this.ticTacRoomId;
+    if (roomId) {
+      game = games[roomId];
+      result = game.move(square, player);
+      if (result) {
+        game.init();
+      }
+      io.to(roomId).emit('moveAck', result, square, player);
     }
-    io.to(roomId).emit('moveAck', result, square, player);
   });
 
-  socket.on('disconnect', function() {
-    games[roomId] = undefined;
-    // TODO
-    io.to(roomId).emit('boot');
+  socket.on('disconnect', function () {
+    var otherPlayer, roomId = this.ticTacRoomId;
+    if (roomId) {
+      otherPlayer = games[roomId].players.filter(
+        (function (player) {
+          return player.id !== this.id;
+        }).bind(this)
+      );
+
+      otherPlayer = otherPlayer[0];
+
+      // remove all references of the room
+      delete otherPlayer.ticTacRoomId;
+      otherPlayer.leave(roomId);
+      delete games[roomId];
+
+      // add the other player back into the lobby
+      otherPlayer.emit('boot');
+      if (lobby.length) createMatch(lobby.pop(), otherPlayer);
+      else lobby.unshift(otherPlayer);
+    } else {
+      // remove the socket from lobby
+      // ...lol efficiency wat?
+      for (var i = lobby.length; i--;) {
+        if (lobby[i].id === this.id) {
+          lobby.splice(i, 1);
+          break;
+        }
+      }
+    }
   });
 });
