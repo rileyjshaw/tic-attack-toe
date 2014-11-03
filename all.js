@@ -128,7 +128,7 @@
 
   var playerRadius = 40;
   ctx.lineWidth = bgCtx.lineWidth = 8;
-  ctx.strokeStyle = bgCtx.strokeStyle = '#336ACD';
+  ctx.strokeStyle = bgCtx.strokeStyle = '#4f997d';
 
   var winSound = new Howl({
     urls: ['win.mp3', 'win.ogg', 'win.wav']
