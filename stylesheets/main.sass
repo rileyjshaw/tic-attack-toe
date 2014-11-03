@@ -6,38 +6,38 @@ body
   color: $cfg
   background: $cbg
 
-h1, canvas, #scores, #messageContainer
+h1, #messageContainer, canvas, #scores
   position: absolute
   top: 50%
   left: 50%
   margin-left: -204px
   border: solid $cfg 0px
 
-h1, #scores, #messageContainer
+h1, #messageContainer, #scores
   width: 408px
   font: bold 36px sans-serif
   line-height: 36px
-
-#scores
-  margin-top: 228px
-  border-top-width: 4px
 
 h1
   margin-top: -264px
   border-bottom-width: 4px
 
-canvas, #messageContainer
+#scores
+  margin-top: 228px
+  border-top-width: 4px
+
+#messageContainer, canvas
   margin-top: -204px
   border-width: 4px
-
-canvas
-  display: none
 
 #messageContainer
   height: 400px
   line-height: 400px
   width: 400px
   text-align: center
+
+canvas
+  display: none
 
 .noMessage
   display: none
