@@ -7,12 +7,12 @@ Tic Attack Toe is Xs and Os meets [Kung-fu Chess](http://en.wikipedia.org/wiki/K
 Run `npm install` and `bower install`, then build and watch with `gulp`.
 
 ## Server
-Run `npm install`, then run with `nodemon server.js`.
+Feel free to use my lobby server. If you want to use your own, run `npm install` and then `nodemon server.js`. Change the line in `scripts/main.js` that says, `var socket = io('http://toyserver.rileyjshaw.com:8010');`.
 
 ## Disclaimer
 I wrote this while half-asleep on a plane. It's really messy. By viewing the source you agree **not** to:
 
- 1. Take it as best-practice in *any* way, or
+ 1. Take it as ~~best~~good-practice in *any* way, or
  2. judge me.
 
 ## License

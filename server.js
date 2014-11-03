@@ -1,4 +1,4 @@
-var io = require('socket.io')(8090);
+var io = require('socket.io')(8010);
 
 // winning combinations (in octal) with the board
 // represented as 9 bits

@@ -7,7 +7,8 @@ var
   rename = require('gulp-rename'),
   sass = require('gulp-ruby-sass'),
   autoprefixer = require('gulp-autoprefixer'),
-  minifyCSS = require('gulp-minify-css');
+  minifyCSS = require('gulp-minify-css'),
+  ghPages = require('gulp-gh-pages');
 
 var paths = {
   src: {
@@ -52,4 +53,10 @@ gulp.task('watch', function() {
   gulp.watch(paths.src.stylesheets, ['sass']);
 });
 
+gulp.task('gh-pages', function () {
+  gulp.src('dist')
+    .pipe(ghPages('https://github.com/rileyjshaw/tic-attack-toe.git', 'origin'));
+});
+
 gulp.task('default', ['lint', 'scripts', 'sass', 'static', 'watch']);
+gulp.task('deploy', ['lint', 'scripts', 'sass', 'static', 'gh-pages']);

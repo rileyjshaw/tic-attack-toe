@@ -1,5 +1,5 @@
 {
-  "name": "Tic Attack Toe",
+  "name": "tic-attack-toe",
   "version": "1.0.0",
   "description": "Turnless multiplayer tic-tac-toe.",
   "main": "dist/all.min.js",

@@ -121,14 +121,14 @@
   ctx.strokeStyle = bgCtx.strokeStyle = '#336ACD';
 
   var winSound = new Howl({
-    urls: ['dist/win.mp3', 'dist/win.ogg', 'dist/win.wav']
+    urls: ['win.mp3', 'win.ogg', 'win.wav']
   });
 
   var loseSound = new Howl({
-    urls: ['dist/lose.mp3', 'dist/lose.ogg', 'dist/lose.wav']
+    urls: ['lose.mp3', 'lose.ogg', 'lose.wav']
   });
 
-  var socket = io('http://localhost:8090');
+  var socket = io('http://toyserver.rileyjshaw.com:8010');
   var player;
   var nextStep;
   var scores = {
