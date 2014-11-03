@@ -54,7 +54,7 @@ gulp.task('watch', function() {
 });
 
 gulp.task('gh-pages', function () {
-  gulp.src('dist')
+  gulp.src('dist/**/*')
     .pipe(ghPages('https://github.com/rileyjshaw/tic-attack-toe.git', 'origin'));
 });
 
