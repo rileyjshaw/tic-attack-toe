@@ -4,7 +4,7 @@
 Tic Attack Toe is Xs and Os meets [Kung-Fu Chess](http://en.wikipedia.org/wiki/Kung-Fu_Chess).
 
 ## Client
-Run `npm install` and `bower install`, then build and watch with `gulp`.
+Run `npm install`, then build and watch with `gulp`.
 
 ## Server
 Feel free to use my lobby server.

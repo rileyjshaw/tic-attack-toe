@@ -2,41 +2,42 @@ var
   gulp = require('gulp'),
   jshint = require('gulp-jshint'),
   stripDebug = require('gulp-strip-debug'),
-  concat = require('gulp-concat'),
   uglify = require('gulp-uglify'),
   rename = require('gulp-rename'),
   sass = require('gulp-ruby-sass'),
   autoprefixer = require('gulp-autoprefixer'),
   minifyCSS = require('gulp-minify-css'),
-  ghPages = require('gulp-gh-pages');
+  ghPages = require('gulp-gh-pages'),
+  streamify = require('gulp-streamify'),
+  source = require('vinyl-source-stream'),
+  browserify = require('browserify');
 
 var paths = {
-  src: {
-    plugins: 'bower_components/howler/howler.min.js',
-    scripts: 'scripts/main.js',
-    stylesheets: 'stylesheets/*.sass',
-    static: 'static/*'
-  }
+  entry: './scripts/main.js',
+  scripts: './scripts/**/*.js',
+  stylesheets: './stylesheets/*.sass',
+  static: './static/*'
 };
 
-gulp.task('lint', function() {
-  return gulp.src(paths.src.scripts)
+gulp.task('lint', function () {
+  return gulp.src(paths.scripts)
     .pipe(jshint())
     .pipe(jshint.reporter('default'));
 });
 
-gulp.task('scripts', function() {
-  return gulp.src([paths.src.plugins, paths.src.scripts])
-    .pipe(stripDebug())
-    .pipe(concat('all.js'))
+gulp.task('scripts', ['lint'], function () {
+  return browserify(paths.entry)
+    .bundle()
+    .pipe(source('all.js'))
+    .pipe(streamify(stripDebug()))
     .pipe(gulp.dest('dist'))
     .pipe(rename('all.min.js'))
-    .pipe(uglify( { outSourceMap: true } ))
+    .pipe(streamify(uglify( { outSourceMap: true } )))
     .pipe(gulp.dest('dist'));
 });
 
 gulp.task('sass', function () {
-  return gulp.src(paths.src.stylesheets)
+  return gulp.src(paths.stylesheets)
     .pipe(sass())
     .pipe(autoprefixer())
     .pipe(minifyCSS())
@@ -44,13 +45,13 @@ gulp.task('sass', function () {
 });
 
 gulp.task('static', function () {
-  return gulp.src(paths.src.static)
+  return gulp.src(paths.static)
     .pipe(gulp.dest('dist'))
 });
 
 gulp.task('watch', function() {
-  gulp.watch(paths.src.scripts, ['lint', 'scripts']);
-  gulp.watch(paths.src.stylesheets, ['sass']);
+  gulp.watch(paths.scripts, ['lint', 'scripts']);
+  gulp.watch(paths.stylesheets, ['sass']);
 });
 
 gulp.task('gh-pages', function () {
