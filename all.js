@@ -1,3 +1,190 @@
+(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+var Howl = require('howler').Howl;
+var isMobile = require('ismobilejs').any;
+
+// Creates an HD canvas element on page and returns
+// a reference to the element
+function createCanvasElement (width, height, id, insertBefore) {
+  // Creates a scaled-up canvas based on the device's
+  // resolution, then displays it properly using styles
+  function createHDCanvas (ratio) {
+    var canvas = document.createElement('canvas');
+
+    if (typeof ratio !== 'number') {
+      // Creates a dummy canvas to test device's pixel ratio
+      ratio = (function () {
+        var ctx = document.createElement('canvas').getContext('2d');
+        var dpr = window.devicePixelRatio || 1;
+        var bsr = ctx.webkitBackingStorePixelRatio ||
+              ctx.mozBackingStorePixelRatio ||
+              ctx.msBackingStorePixelRatio ||
+              ctx.oBackingStorePixelRatio ||
+              ctx.backingStorePixelRatio || 1;
+        return dpr / bsr;
+      })();
+    }
+
+    canvas.width = width * ratio;
+    canvas.height = height * ratio;
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+    canvas.getContext('2d').setTransform(ratio, 0, 0, ratio, 0, 0);
+    canvas.id = id;
+
+    return canvas;
+  }
+
+  var canvas = createHDCanvas();
+  document.body.insertBefore(canvas, insertBefore);
+  return canvas;
+}
+
+// Returns mouse coordinates that are
+// relative to the canvas, i.e. useful
+function relativeCoords (event) {
+  var totalOffsetX = 0;
+  var totalOffsetY = 0;
+  var currentElement = game;
+
+  do {
+    totalOffsetX += currentElement.offsetLeft - currentElement.scrollLeft;
+    totalOffsetY += currentElement.offsetTop - currentElement.scrollTop;
+    currentElement = currentElement.offsetParent;
+  } while (currentElement);
+
+  var canvasX = event.pageX - totalOffsetX;
+  var canvasY = event.pageY - totalOffsetY;
+
+  return {
+    x: canvasX,
+    y: canvasY
+  };
+}
+
+function drawMessage (message) {
+    if (typeof message === 'string') {
+      if (messageContainer.className) messageContainer.className = '';
+      messageContainer.textContent = message;
+    } else {
+      ctx.clearRect(0, 0, width, height);
+      messageContainer.className = 'noMessage';
+    }
+}
+
+function drawPlayer (i, player) {
+  var x = width * (2 * (i % 3) + 1) / 6;
+  var y = height * (2 * (Math.floor(i / 3)) + 1) / 6;
+
+  ctx.beginPath();
+
+  if (player === 'X') {
+    ctx.moveTo(x - playerRadius, y - playerRadius);
+    ctx.lineTo(x + playerRadius, y + playerRadius);
+    ctx.moveTo(x - playerRadius, y + playerRadius);
+    ctx.lineTo(x + playerRadius, y - playerRadius);
+  } else if (player === 'O') {
+    ctx.beginPath();
+    ctx.arc(x, y, playerRadius, 0, 2 * Math.PI);
+  } else throw 'Invalid player argument ' + player;
+
+  ctx.stroke();
+  ctx.closePath();
+}
+
+function handleClick (event) {
+  var coords = relativeCoords(event);
+  var x = Math.floor(coords.x * 3 / width);
+  var y = Math.floor(coords.y * 3 / height);
+  var i = x + y * 3;
+  var clickTime = new Date().getTime();
+  socket.emit('move', i, player);
+}
+
+function countdown (first, n) {
+  n = n || 3;
+  (function step () {
+    if (n) {
+      drawMessage((first ? 'Starting ' : 'Re') + 'match in ' + n--);
+      nextStep = setTimeout(step, 300);
+    } else drawMessage();
+  })();
+}
+
+var width = 400;
+var height = 400;
+
+var scoreContainer = document.getElementById('scores');
+var scoreX = document.getElementById('score1');
+var scoreO = document.getElementById('score2');
+var messageContainer = document.getElementById('messageContainer');
+var game = createCanvasElement(width, height, 'game', scoreContainer);
+var bg = createCanvasElement(width, height, 'bg', game);
+var ctx = game.getContext('2d');
+var bgCtx = bg.getContext('2d');
+
+var playerRadius = 40;
+ctx.lineWidth = bgCtx.lineWidth = 8;
+ctx.strokeStyle = bgCtx.strokeStyle = '#4f997d';
+
+var winSound = new Howl({
+  urls: ['win.mp3', 'win.ogg', 'win.wav']
+});
+
+var loseSound = new Howl({
+  urls: ['lose.mp3', 'lose.ogg', 'lose.wav']
+});
+
+var socket = io('http://toyserver.rileyjshaw.com:8010');
+var player;
+var nextStep;
+var scores = {
+  X: 0,
+  O: 0
+};
+
+socket.on('startGame', function () {
+  countdown(true);
+});
+
+socket.on('setPlayer', function (character) {
+  player = character;
+});
+
+socket.on('moveAck', function (result, square, mover) {
+  if (result !== null) {
+    drawPlayer(square, mover);
+    if (result) {
+      drawMessage('Team ' + mover + ' won!');
+      (mover === 'X' ? scoreX : scoreO).innerText = ++scores[mover];
+      (mover === player ? winSound : loseSound).play();
+      nextStep = setTimeout(countdown, 1000);
+    }
+  }
+});
+
+socket.on('boot', function () {
+  clearTimeout(nextStep);
+  drawMessage('Waiting for opponent');
+});
+
+bgCtx.beginPath();
+
+for (var i = 3; i >= 0; i--) {
+  bgCtx.moveTo((width / 3) * i, 0);
+  bgCtx.lineTo((width / 3 ) * i, height);
+
+  bgCtx.moveTo(0, (height / 3) * i);
+  bgCtx.lineTo(width, (height / 3) * i);
+}
+
+bgCtx.stroke();
+bgCtx.closePath();
+
+game.addEventListener(isMobile ? 'touchstart' : 'mousedown', function (event) {
+  handleClick(event);
+}, false);
+
+},{"howler":2,"ismobilejs":3}],2:[function(require,module,exports){
 /*!
  *  howler.js v1.1.25
  *  howlerjs.com
@@ -7,184 +194,1462 @@
  *
  *  MIT License
  */
-!function(){var e={},t=null,n=!0,r=!1;try{"undefined"!=typeof AudioContext?t=new AudioContext:"undefined"!=typeof webkitAudioContext?t=new webkitAudioContext:n=!1}catch(i){n=!1}if(!n)if("undefined"!=typeof Audio)try{new Audio}catch(i){r=!0}else r=!0;if(n){var s=void 0===t.createGain?t.createGainNode():t.createGain();s.gain.value=1,s.connect(t.destination)}var o=function(e){this._volume=1,this._muted=!1,this.usingWebAudio=n,this.ctx=t,this.noAudio=r,this._howls=[],this._codecs=e,this.iOSAutoEnable=!0};o.prototype={volume:function(e){var t=this;if(e=parseFloat(e),e>=0&&1>=e){t._volume=e,n&&(s.gain.value=e);for(var r in t._howls)if(t._howls.hasOwnProperty(r)&&t._howls[r]._webAudio===!1)for(var i=0;i<t._howls[r]._audioNode.length;i++)t._howls[r]._audioNode[i].volume=t._howls[r]._volume*t._volume;return t}return n?s.gain.value:t._volume},mute:function(){return this._setMuted(!0),this},unmute:function(){return this._setMuted(!1),this},_setMuted:function(e){var t=this;t._muted=e,n&&(s.gain.value=e?0:t._volume);for(var r in t._howls)if(t._howls.hasOwnProperty(r)&&t._howls[r]._webAudio===!1)for(var i=0;i<t._howls[r]._audioNode.length;i++)t._howls[r]._audioNode[i].muted=e},codecs:function(e){return this._codecs[e]},_enableiOSAudio:function(){var e=this;if(!t||!e._iOSEnabled&&/iPhone|iPad|iPod/i.test(navigator.userAgent)){e._iOSEnabled=!1;var n=function(){var r=t.createBuffer(1,1,22050),i=t.createBufferSource();i.buffer=r,i.connect(t.destination),void 0===i.start?i.noteOn(0):i.start(0),setTimeout(function(){(i.playbackState===i.PLAYING_STATE||i.playbackState===i.FINISHED_STATE)&&(e._iOSEnabled=!0,e.iOSAutoEnable=!1,window.removeEventListener("touchstart",n,!1))},0)};return window.addEventListener("touchstart",n,!1),e}}};var u=null,a={};r||(u=new Audio,a={mp3:!!u.canPlayType("audio/mpeg;").replace(/^no$/,""),opus:!!u.canPlayType('audio/ogg; codecs="opus"').replace(/^no$/,""),ogg:!!u.canPlayType('audio/ogg; codecs="vorbis"').replace(/^no$/,""),wav:!!u.canPlayType('audio/wav; codecs="1"').replace(/^no$/,""),aac:!!u.canPlayType("audio/aac;").replace(/^no$/,""),m4a:!!(u.canPlayType("audio/x-m4a;")||u.canPlayType("audio/m4a;")||u.canPlayType("audio/aac;")).replace(/^no$/,""),mp4:!!(u.canPlayType("audio/x-mp4;")||u.canPlayType("audio/mp4;")||u.canPlayType("audio/aac;")).replace(/^no$/,""),weba:!!u.canPlayType('audio/webm; codecs="vorbis"').replace(/^no$/,"")});var f=new o(a),l=function(e){var r=this;r._autoplay=e.autoplay||!1,r._buffer=e.buffer||!1,r._duration=e.duration||0,r._format=e.format||null,r._loop=e.loop||!1,r._loaded=!1,r._sprite=e.sprite||{},r._src=e.src||"",r._pos3d=e.pos3d||[0,0,-.5],r._volume=void 0!==e.volume?e.volume:1,r._urls=e.urls||[],r._rate=e.rate||1,r._model=e.model||null,r._onload=[e.onload||function(){}],r._onloaderror=[e.onloaderror||function(){}],r._onend=[e.onend||function(){}],r._onpause=[e.onpause||function(){}],r._onplay=[e.onplay||function(){}],r._onendTimer=[],r._webAudio=n&&!r._buffer,r._audioNode=[],r._webAudio&&r._setupAudioNode(),void 0!==t&&t&&f.iOSAutoEnable&&f._enableiOSAudio(),f._howls.push(r),r.load()};if(l.prototype={load:function(){var e=this,t=null;if(r)return void e.on("loaderror");for(var n=0;n<e._urls.length;n++){var i,s;if(e._format)i=e._format;else{if(s=e._urls[n],i=/^data:audio\/([^;,]+);/i.exec(s),i||(i=/\.([^.]+)$/.exec(s.split("?",1)[0])),!i)return void e.on("loaderror");i=i[1].toLowerCase()}if(a[i]){t=e._urls[n];break}}if(!t)return void e.on("loaderror");if(e._src=t,e._webAudio)c(e,t);else{var u=new Audio;u.addEventListener("error",function(){u.error&&4===u.error.code&&(o.noAudio=!0),e.on("loaderror",{type:u.error?u.error.code:0})},!1),e._audioNode.push(u),u.src=t,u._pos=0,u.preload="auto",u.volume=f._muted?0:e._volume*f.volume();var l=function(){e._duration=Math.ceil(10*u.duration)/10,0===Object.getOwnPropertyNames(e._sprite).length&&(e._sprite={_default:[0,1e3*e._duration]}),e._loaded||(e._loaded=!0,e.on("load")),e._autoplay&&e.play(),u.removeEventListener("canplaythrough",l,!1)};u.addEventListener("canplaythrough",l,!1),u.load()}return e},urls:function(e){var t=this;return e?(t.stop(),t._urls="string"==typeof e?[e]:e,t._loaded=!1,t.load(),t):t._urls},play:function(e,n){var r=this;return"function"==typeof e&&(n=e),e&&"function"!=typeof e||(e="_default"),r._loaded?r._sprite[e]?(r._inactiveNode(function(i){i._sprite=e;var s=i._pos>0?i._pos:r._sprite[e][0]/1e3,o=0;r._webAudio?(o=r._sprite[e][1]/1e3-i._pos,i._pos>0&&(s=r._sprite[e][0]/1e3+s)):o=r._sprite[e][1]/1e3-(s-r._sprite[e][0]/1e3);var u,a=!(!r._loop&&!r._sprite[e][2]),l="string"==typeof n?n:Math.round(Date.now()*Math.random())+"";if(function(){var t={id:l,sprite:e,loop:a};u=setTimeout(function(){!r._webAudio&&a&&r.stop(t.id).play(e,t.id),r._webAudio&&!a&&(r._nodeById(t.id).paused=!0,r._nodeById(t.id)._pos=0,r._clearEndTimer(t.id)),r._webAudio||a||r.stop(t.id),r.on("end",l)},1e3*o),r._onendTimer.push({timer:u,id:t.id})}(),r._webAudio){var c=r._sprite[e][0]/1e3,h=r._sprite[e][1]/1e3;i.id=l,i.paused=!1,d(r,[a,c,h],l),r._playStart=t.currentTime,i.gain.value=r._volume,void 0===i.bufferSource.start?i.bufferSource.noteGrainOn(0,s,o):i.bufferSource.start(0,s,o)}else{if(4!==i.readyState&&(i.readyState||!navigator.isCocoonJS))return r._clearEndTimer(l),function(){var t=r,s=e,o=n,u=i,a=function(){t.play(s,o),u.removeEventListener("canplaythrough",a,!1)};u.addEventListener("canplaythrough",a,!1)}(),r;i.readyState=4,i.id=l,i.currentTime=s,i.muted=f._muted||i.muted,i.volume=r._volume*f.volume(),setTimeout(function(){i.play()},0)}return r.on("play"),"function"==typeof n&&n(l),r}),r):("function"==typeof n&&n(),r):(r.on("load",function(){r.play(e,n)}),r)},pause:function(e){var t=this;if(!t._loaded)return t.on("play",function(){t.pause(e)}),t;t._clearEndTimer(e);var n=e?t._nodeById(e):t._activeNode();if(n)if(n._pos=t.pos(null,e),t._webAudio){if(!n.bufferSource||n.paused)return t;n.paused=!0,void 0===n.bufferSource.stop?n.bufferSource.noteOff(0):n.bufferSource.stop(0)}else n.pause();return t.on("pause"),t},stop:function(e){var t=this;if(!t._loaded)return t.on("play",function(){t.stop(e)}),t;t._clearEndTimer(e);var n=e?t._nodeById(e):t._activeNode();if(n)if(n._pos=0,t._webAudio){if(!n.bufferSource||n.paused)return t;n.paused=!0,void 0===n.bufferSource.stop?n.bufferSource.noteOff(0):n.bufferSource.stop(0)}else isNaN(n.duration)||(n.pause(),n.currentTime=0);return t},mute:function(e){var t=this;if(!t._loaded)return t.on("play",function(){t.mute(e)}),t;var n=e?t._nodeById(e):t._activeNode();return n&&(t._webAudio?n.gain.value=0:n.muted=!0),t},unmute:function(e){var t=this;if(!t._loaded)return t.on("play",function(){t.unmute(e)}),t;var n=e?t._nodeById(e):t._activeNode();return n&&(t._webAudio?n.gain.value=t._volume:n.muted=!1),t},volume:function(e,t){var n=this;if(e=parseFloat(e),e>=0&&1>=e){if(n._volume=e,!n._loaded)return n.on("play",function(){n.volume(e,t)}),n;var r=t?n._nodeById(t):n._activeNode();return r&&(n._webAudio?r.gain.value=e:r.volume=e*f.volume()),n}return n._volume},loop:function(e){var t=this;return"boolean"==typeof e?(t._loop=e,t):t._loop},sprite:function(e){var t=this;return"object"==typeof e?(t._sprite=e,t):t._sprite},pos:function(e,n){var r=this;if(!r._loaded)return r.on("load",function(){r.pos(e)}),"number"==typeof e?r:r._pos||0;e=parseFloat(e);var i=n?r._nodeById(n):r._activeNode();if(i)return e>=0?(r.pause(n),i._pos=e,r.play(i._sprite,n),r):r._webAudio?i._pos+(t.currentTime-r._playStart):i.currentTime;if(e>=0)return r;for(var s=0;s<r._audioNode.length;s++)if(r._audioNode[s].paused&&4===r._audioNode[s].readyState)return r._webAudio?r._audioNode[s]._pos:r._audioNode[s].currentTime},pos3d:function(e,t,n,r){var i=this;if(t=void 0!==t&&t?t:0,n=void 0!==n&&n?n:-.5,!i._loaded)return i.on("play",function(){i.pos3d(e,t,n,r)}),i;if(!(e>=0||0>e))return i._pos3d;if(i._webAudio){var s=r?i._nodeById(r):i._activeNode();s&&(i._pos3d=[e,t,n],s.panner.setPosition(e,t,n),s.panner.panningModel=i._model||"HRTF")}return i},fade:function(e,t,n,r,i){var s=this,o=Math.abs(e-t),u=e>t?"down":"up",a=o/.01,f=n/a;if(!s._loaded)return s.on("load",function(){s.fade(e,t,n,r,i)}),s;s.volume(e,i);for(var l=1;a>=l;l++)!function(){var e=s._volume+("up"===u?.01:-.01)*l,n=Math.round(1e3*e)/1e3,o=t;setTimeout(function(){s.volume(n,i),n===o&&r&&r()},f*l)}()},fadeIn:function(e,t,n){return this.volume(0).play().fade(0,e,t,n)},fadeOut:function(e,t,n,r){var i=this;return i.fade(i._volume,e,t,function(){n&&n(),i.pause(r),i.on("end")},r)},_nodeById:function(e){for(var t=this,n=t._audioNode[0],r=0;r<t._audioNode.length;r++)if(t._audioNode[r].id===e){n=t._audioNode[r];break}return n},_activeNode:function(){for(var e=this,t=null,n=0;n<e._audioNode.length;n++)if(!e._audioNode[n].paused){t=e._audioNode[n];break}return e._drainPool(),t},_inactiveNode:function(e){for(var t=this,n=null,r=0;r<t._audioNode.length;r++)if(t._audioNode[r].paused&&4===t._audioNode[r].readyState){e(t._audioNode[r]),n=!0;break}if(t._drainPool(),!n){var i;if(t._webAudio)i=t._setupAudioNode(),e(i);else{t.load(),i=t._audioNode[t._audioNode.length-1];var s=navigator.isCocoonJS?"canplaythrough":"loadedmetadata",o=function(){i.removeEventListener(s,o,!1),e(i)};i.addEventListener(s,o,!1)}}},_drainPool:function(){var e,t=this,n=0;for(e=0;e<t._audioNode.length;e++)t._audioNode[e].paused&&n++;for(e=t._audioNode.length-1;e>=0&&!(5>=n);e--)t._audioNode[e].paused&&(t._webAudio&&t._audioNode[e].disconnect(0),n--,t._audioNode.splice(e,1))},_clearEndTimer:function(e){for(var t=this,n=0,r=0;r<t._onendTimer.length;r++)if(t._onendTimer[r].id===e){n=r;break}var i=t._onendTimer[n];i&&(clearTimeout(i.timer),t._onendTimer.splice(n,1))},_setupAudioNode:function(){var e=this,n=e._audioNode,r=e._audioNode.length;return n[r]=void 0===t.createGain?t.createGainNode():t.createGain(),n[r].gain.value=e._volume,n[r].paused=!0,n[r]._pos=0,n[r].readyState=4,n[r].connect(s),n[r].panner=t.createPanner(),n[r].panner.panningModel=e._model||"equalpower",n[r].panner.setPosition(e._pos3d[0],e._pos3d[1],e._pos3d[2]),n[r].panner.connect(n[r]),n[r]},on:function(e,t){var n=this,r=n["_on"+e];if("function"==typeof t)r.push(t);else for(var i=0;i<r.length;i++)t?r[i].call(n,t):r[i].call(n);return n},off:function(e,t){var n=this,r=n["_on"+e],i=t?""+t:null;if(i){for(var s=0;s<r.length;s++)if(i===""+r[s]){r.splice(s,1);break}}else n["_on"+e]=[];return n},unload:function(){for(var t=this,n=t._audioNode,r=0;r<t._audioNode.length;r++)n[r].paused||(t.stop(n[r].id),t.on("end",n[r].id)),t._webAudio?n[r].disconnect(0):n[r].src="";for(r=0;r<t._onendTimer.length;r++)clearTimeout(t._onendTimer[r].timer);var i=f._howls.indexOf(t);null!==i&&i>=0&&f._howls.splice(i,1),delete e[t._src],t=null}},n)var c=function(t,n){if(n in e)return t._duration=e[n].duration,void p(t);if(/^data:[^;]+;base64,/.test(n)){for(var r=atob(n.split(",")[1]),i=new Uint8Array(r.length),s=0;s<r.length;++s)i[s]=r.charCodeAt(s);h(i.buffer,t,n)}else{var o=new XMLHttpRequest;o.open("GET",n,!0),o.responseType="arraybuffer",o.onload=function(){h(o.response,t,n)},o.onerror=function(){t._webAudio&&(t._buffer=!0,t._webAudio=!1,t._audioNode=[],delete t._gainNode,delete e[n],t.load())};try{o.send()}catch(u){o.onerror()}}},h=function(n,r,i){t.decodeAudioData(n,function(t){t&&(e[i]=t,p(r,t))},function(){r.on("loaderror")})},p=function(e,t){e._duration=t?t.duration:e._duration,0===Object.getOwnPropertyNames(e._sprite).length&&(e._sprite={_default:[0,1e3*e._duration]}),e._loaded||(e._loaded=!0,e.on("load")),e._autoplay&&e.play()},d=function(n,r,i){var s=n._nodeById(i);s.bufferSource=t.createBufferSource(),s.bufferSource.buffer=e[n._src],s.bufferSource.connect(s.panner),s.bufferSource.loop=r[0],r[0]&&(s.bufferSource.loopStart=r[1],s.bufferSource.loopEnd=r[1]+r[2]),s.bufferSource.playbackRate.value=n._rate};"function"==typeof define&&define.amd&&define(function(){return{Howler:f,Howl:l}}),"undefined"!=typeof exports&&(exports.Howler=f,exports.Howl=l),"undefined"!=typeof window&&(window.Howler=f,window.Howl=l)}();
-;(function (width, height, id) {
-  // Creates an HD canvas element on page and returns
-  // a reference to the element
-  function createCanvasElement (width, height, id, insertBefore) {
-    // Creates a scaled-up canvas based on the device's
-    // resolution, then displays it properly using styles
-    function createHDCanvas (ratio) {
-      var canvas = document.createElement('canvas');
 
-      if (typeof ratio !== 'number') {
-        // Creates a dummy canvas to test device's pixel ratio
-        ratio = (function () {
-          var ctx = document.createElement('canvas').getContext('2d');
-          var dpr = window.devicePixelRatio || 1;
-          var bsr = ctx.webkitBackingStorePixelRatio ||
-                ctx.mozBackingStorePixelRatio ||
-                ctx.msBackingStorePixelRatio ||
-                ctx.oBackingStorePixelRatio ||
-                ctx.backingStorePixelRatio || 1;
-          return dpr / bsr;
-        })();
-      }
+(function() {
+  // setup
+  var cache = {};
 
-      canvas.width = width * ratio;
-      canvas.height = height * ratio;
-      canvas.style.width = width + 'px';
-      canvas.style.height = height + 'px';
-      canvas.getContext('2d').setTransform(ratio, 0, 0, ratio, 0, 0);
-      canvas.id = id;
-
-      return canvas;
+  // setup the audio context
+  var ctx = null,
+    usingWebAudio = true,
+    noAudio = false;
+  try {
+    if (typeof AudioContext !== 'undefined') {
+      ctx = new AudioContext();
+    } else if (typeof webkitAudioContext !== 'undefined') {
+      ctx = new webkitAudioContext();
+    } else {
+      usingWebAudio = false;
     }
-
-    var canvas = createHDCanvas();
-    document.body.insertBefore(canvas, insertBefore);
-    return canvas;
+  } catch(e) {
+    usingWebAudio = false;
   }
 
-  // Returns mouse coordinates that are
-  // relative to the canvas, i.e. useful
-  function relativeCoords (event) {
-    var totalOffsetX = 0;
-    var totalOffsetY = 0;
-    var currentElement = game;
+  if (!usingWebAudio) {
+    if (typeof Audio !== 'undefined') {
+      try {
+        new Audio();
+      } catch(e) {
+        noAudio = true;
+      }
+    } else {
+      noAudio = true;
+    }
+  }
 
-    do {
-      totalOffsetX += currentElement.offsetLeft - currentElement.scrollLeft;
-      totalOffsetY += currentElement.offsetTop - currentElement.scrollTop;
-      currentElement = currentElement.offsetParent;
-    } while (currentElement);
+  // create a master gain node
+  if (usingWebAudio) {
+    var masterGain = (typeof ctx.createGain === 'undefined') ? ctx.createGainNode() : ctx.createGain();
+    masterGain.gain.value = 1;
+    masterGain.connect(ctx.destination);
+  }
 
-    var canvasX = event.pageX - totalOffsetX;
-    var canvasY = event.pageY - totalOffsetY;
+  // create global controller
+  var HowlerGlobal = function(codecs) {
+    this._volume = 1;
+    this._muted = false;
+    this.usingWebAudio = usingWebAudio;
+    this.ctx = ctx;
+    this.noAudio = noAudio;
+    this._howls = [];
+    this._codecs = codecs;
+    this.iOSAutoEnable = true;
+  };
+  HowlerGlobal.prototype = {
+    /**
+     * Get/set the global volume for all sounds.
+     * @param  {Float} vol Volume from 0.0 to 1.0.
+     * @return {Howler/Float}     Returns self or current volume.
+     */
+    volume: function(vol) {
+      var self = this;
 
-    return {
-      x: canvasX,
-      y: canvasY
+      // make sure volume is a number
+      vol = parseFloat(vol);
+
+      if (vol >= 0 && vol <= 1) {
+        self._volume = vol;
+
+        if (usingWebAudio) {
+          masterGain.gain.value = vol;
+        }
+
+        // loop through cache and change volume of all nodes that are using HTML5 Audio
+        for (var key in self._howls) {
+          if (self._howls.hasOwnProperty(key) && self._howls[key]._webAudio === false) {
+            // loop through the audio nodes
+            for (var i=0; i<self._howls[key]._audioNode.length; i++) {
+              self._howls[key]._audioNode[i].volume = self._howls[key]._volume * self._volume;
+            }
+          }
+        }
+
+        return self;
+      }
+
+      // return the current global volume
+      return (usingWebAudio) ? masterGain.gain.value : self._volume;
+    },
+
+    /**
+     * Mute all sounds.
+     * @return {Howler}
+     */
+    mute: function() {
+      this._setMuted(true);
+
+      return this;
+    },
+
+    /**
+     * Unmute all sounds.
+     * @return {Howler}
+     */
+    unmute: function() {
+      this._setMuted(false);
+
+      return this;
+    },
+
+    /**
+     * Handle muting and unmuting globally.
+     * @param  {Boolean} muted Is muted or not.
+     */
+    _setMuted: function(muted) {
+      var self = this;
+
+      self._muted = muted;
+
+      if (usingWebAudio) {
+        masterGain.gain.value = muted ? 0 : self._volume;
+      }
+
+      for (var key in self._howls) {
+        if (self._howls.hasOwnProperty(key) && self._howls[key]._webAudio === false) {
+          // loop through the audio nodes
+          for (var i=0; i<self._howls[key]._audioNode.length; i++) {
+            self._howls[key]._audioNode[i].muted = muted;
+          }
+        }
+      }
+    },
+
+    /**
+     * Check for codec support.
+     * @param  {String} ext Audio file extention.
+     * @return {Boolean}
+     */
+    codecs: function(ext) {
+      return this._codecs[ext];
+    },
+
+    /**
+     * iOS will only allow audio to be played after a user interaction.
+     * Attempt to automatically unlock audio on the first user interaction.
+     * Concept from: http://paulbakaus.com/tutorials/html5/web-audio-on-ios/
+     * @return {Howler}
+     */
+    _enableiOSAudio: function() {
+      var self = this;
+
+      // only run this on iOS if audio isn't already eanbled
+      if (ctx && (self._iOSEnabled || !/iPhone|iPad|iPod/i.test(navigator.userAgent))) {
+        return;
+      }
+
+      self._iOSEnabled = false;
+
+      // call this method on touch start to create and play a buffer,
+      // then check if the audio actually played to determine if
+      // audio has now been unlocked on iOS
+      var unlock = function() {
+        // create an empty buffer
+        var buffer = ctx.createBuffer(1, 1, 22050);
+        var source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+
+        // play the empty buffer
+        if (typeof source.start === 'undefined') {
+          source.noteOn(0);
+        } else {
+          source.start(0);
+        }
+
+        // setup a timeout to check that we are unlocked on the next event loop
+        setTimeout(function() {
+          if ((source.playbackState === source.PLAYING_STATE || source.playbackState === source.FINISHED_STATE)) {
+            // update the unlocked state and prevent this check from happening again
+            self._iOSEnabled = true;
+            self.iOSAutoEnable = false;
+
+            // remove the touch start listener
+            window.removeEventListener('touchstart', unlock, false);
+          }
+        }, 0);
+      };
+
+      // setup a touch start listener to attempt an unlock in
+      window.addEventListener('touchstart', unlock, false);
+
+      return self;
+    }
+  };
+
+  // check for browser codec support
+  var audioTest = null;
+  var codecs = {};
+  if (!noAudio) {
+    audioTest = new Audio();
+    codecs = {
+      mp3: !!audioTest.canPlayType('audio/mpeg;').replace(/^no$/, ''),
+      opus: !!audioTest.canPlayType('audio/ogg; codecs="opus"').replace(/^no$/, ''),
+      ogg: !!audioTest.canPlayType('audio/ogg; codecs="vorbis"').replace(/^no$/, ''),
+      wav: !!audioTest.canPlayType('audio/wav; codecs="1"').replace(/^no$/, ''),
+      aac: !!audioTest.canPlayType('audio/aac;').replace(/^no$/, ''),
+      m4a: !!(audioTest.canPlayType('audio/x-m4a;') || audioTest.canPlayType('audio/m4a;') || audioTest.canPlayType('audio/aac;')).replace(/^no$/, ''),
+      mp4: !!(audioTest.canPlayType('audio/x-mp4;') || audioTest.canPlayType('audio/mp4;') || audioTest.canPlayType('audio/aac;')).replace(/^no$/, ''),
+      weba: !!audioTest.canPlayType('audio/webm; codecs="vorbis"').replace(/^no$/, '')
     };
   }
 
-  function drawMessage (message) {
-      if (typeof message === 'string') {
-        if (messageContainer.className) messageContainer.className = '';
-        messageContainer.textContent = message;
-      } else {
-        ctx.clearRect(0, 0, width, height);
-        messageContainer.className = 'noMessage';
-      }
-  }
+  // allow access to the global audio controls
+  var Howler = new HowlerGlobal(codecs);
 
-  function drawPlayer (i, player) {
-    var x = width * (2 * (i % 3) + 1) / 6;
-    var y = height * (2 * (Math.floor(i / 3)) + 1) / 6;
+  // setup the audio object
+  var Howl = function(o) {
+    var self = this;
 
-    ctx.beginPath();
+    // setup the defaults
+    self._autoplay = o.autoplay || false;
+    self._buffer = o.buffer || false;
+    self._duration = o.duration || 0;
+    self._format = o.format || null;
+    self._loop = o.loop || false;
+    self._loaded = false;
+    self._sprite = o.sprite || {};
+    self._src = o.src || '';
+    self._pos3d = o.pos3d || [0, 0, -0.5];
+    self._volume = o.volume !== undefined ? o.volume : 1;
+    self._urls = o.urls || [];
+    self._rate = o.rate || 1;
 
-    if (player === 'X') {
-      ctx.moveTo(x - playerRadius, y - playerRadius);
-      ctx.lineTo(x + playerRadius, y + playerRadius);
-      ctx.moveTo(x - playerRadius, y + playerRadius);
-      ctx.lineTo(x + playerRadius, y - playerRadius);
-    } else if (player === 'O') {
-      ctx.beginPath();
-      ctx.arc(x, y, playerRadius, 0, 2 * Math.PI);
-    } else throw 'Invalid player argument ' + player;
+    // allow forcing of a specific panningModel ('equalpower' or 'HRTF'),
+    // if none is specified, defaults to 'equalpower' and switches to 'HRTF'
+    // if 3d sound is used
+    self._model = o.model || null;
 
-    ctx.stroke();
-    ctx.closePath();
-  }
+    // setup event functions
+    self._onload = [o.onload || function() {}];
+    self._onloaderror = [o.onloaderror || function() {}];
+    self._onend = [o.onend || function() {}];
+    self._onpause = [o.onpause || function() {}];
+    self._onplay = [o.onplay || function() {}];
 
-  function handleClick (event) {
-    var coords = relativeCoords(event);
-    var x = Math.floor(coords.x * 3 / width);
-    var y = Math.floor(coords.y * 3 / height);
-    var i = x + y * 3;
-    var clickTime = new Date().getTime();
-    socket.emit('move', i, player);
-  }
+    self._onendTimer = [];
 
-  function countdown (first, n) {
-    n = n || 3;
-    (function step () {
-      if (n) {
-        drawMessage((first ? 'Starting ' : 'Re') + 'match in ' + n--);
-        nextStep = setTimeout(step, 300);
-      } else drawMessage();
-    })();
-  }
+    // Web Audio or HTML5 Audio?
+    self._webAudio = usingWebAudio && !self._buffer;
 
-  var scoreContainer = document.getElementById('scores');
-  var scoreX = document.getElementById('score1');
-  var scoreO = document.getElementById('score2');
-  var messageContainer = document.getElementById('messageContainer');
-  var game = createCanvasElement(width, height, 'game', scoreContainer);
-  var bg = createCanvasElement(width, height, 'bg', game);
-  var ctx = game.getContext('2d');
-  var bgCtx = bg.getContext('2d');
+    // check if we need to fall back to HTML5 Audio
+    self._audioNode = [];
+    if (self._webAudio) {
+      self._setupAudioNode();
+    }
 
-  var playerRadius = 40;
-  ctx.lineWidth = bgCtx.lineWidth = 8;
-  ctx.strokeStyle = bgCtx.strokeStyle = '#4f997d';
+    // automatically try to enable audio on iOS
+    if (typeof ctx !== 'undefined' && ctx && Howler.iOSAutoEnable) {
+      Howler._enableiOSAudio();
+    }
 
-  var winSound = new Howl({
-    urls: ['win.mp3', 'win.ogg', 'win.wav']
-  });
+    // add this to an array of Howl's to allow global control
+    Howler._howls.push(self);
 
-  var loseSound = new Howl({
-    urls: ['lose.mp3', 'lose.ogg', 'lose.wav']
-  });
-
-  var socket = io('http://toyserver.rileyjshaw.com:8010');
-  var player;
-  var nextStep;
-  var scores = {
-    X: 0,
-    O: 0
+    // load the track
+    self.load();
   };
 
-  socket.on('startGame', function () {
-    countdown(true);
-  });
+  // setup all of the methods
+  Howl.prototype = {
+    /**
+     * Load an audio file.
+     * @return {Howl}
+     */
+    load: function() {
+      var self = this,
+        url = null;
 
-  socket.on('setPlayer', function (character) {
-    player = character;
-  });
-
-  socket.on('moveAck', function (result, square, mover) {
-    if (result !== null) {
-      drawPlayer(square, mover);
-      if (result) {
-        drawMessage('Team ' + mover + ' won!');
-        (mover === 'X' ? scoreX : scoreO).innerText = ++scores[mover];
-        (mover === player ? winSound : loseSound).play();
-        nextStep = setTimeout(countdown, 1000);
+      // if no audio is available, quit immediately
+      if (noAudio) {
+        self.on('loaderror');
+        return;
       }
+
+      // loop through source URLs and pick the first one that is compatible
+      for (var i=0; i<self._urls.length; i++) {
+        var ext, urlItem;
+
+        if (self._format) {
+          // use specified audio format if available
+          ext = self._format;
+        } else {
+          // figure out the filetype (whether an extension or base64 data)
+          urlItem = self._urls[i];
+          ext = /^data:audio\/([^;,]+);/i.exec(urlItem);
+          if (!ext) {
+            ext = /\.([^.]+)$/.exec(urlItem.split('?', 1)[0]);
+          }
+
+          if (ext) {
+            ext = ext[1].toLowerCase();
+          } else {
+            self.on('loaderror');
+            return;
+          }
+        }
+
+        if (codecs[ext]) {
+          url = self._urls[i];
+          break;
+        }
+      }
+
+      if (!url) {
+        self.on('loaderror');
+        return;
+      }
+
+      self._src = url;
+
+      if (self._webAudio) {
+        loadBuffer(self, url);
+      } else {
+        var newNode = new Audio();
+
+        // listen for errors with HTML5 audio (http://dev.w3.org/html5/spec-author-view/spec.html#mediaerror)
+        newNode.addEventListener('error', function () {
+          if (newNode.error && newNode.error.code === 4) {
+            HowlerGlobal.noAudio = true;
+          }
+
+          self.on('loaderror', {type: newNode.error ? newNode.error.code : 0});
+        }, false);
+
+        self._audioNode.push(newNode);
+
+        // setup the new audio node
+        newNode.src = url;
+        newNode._pos = 0;
+        newNode.preload = 'auto';
+        newNode.volume = (Howler._muted) ? 0 : self._volume * Howler.volume();
+
+        // setup the event listener to start playing the sound
+        // as soon as it has buffered enough
+        var listener = function() {
+          // round up the duration when using HTML5 Audio to account for the lower precision
+          self._duration = Math.ceil(newNode.duration * 10) / 10;
+
+          // setup a sprite if none is defined
+          if (Object.getOwnPropertyNames(self._sprite).length === 0) {
+            self._sprite = {_default: [0, self._duration * 1000]};
+          }
+
+          if (!self._loaded) {
+            self._loaded = true;
+            self.on('load');
+          }
+
+          if (self._autoplay) {
+            self.play();
+          }
+
+          // clear the event listener
+          newNode.removeEventListener('canplaythrough', listener, false);
+        };
+        newNode.addEventListener('canplaythrough', listener, false);
+        newNode.load();
+      }
+
+      return self;
+    },
+
+    /**
+     * Get/set the URLs to be pulled from to play in this source.
+     * @param  {Array} urls  Arry of URLs to load from
+     * @return {Howl}        Returns self or the current URLs
+     */
+    urls: function(urls) {
+      var self = this;
+
+      if (urls) {
+        self.stop();
+        self._urls = (typeof urls === 'string') ? [urls] : urls;
+        self._loaded = false;
+        self.load();
+
+        return self;
+      } else {
+        return self._urls;
+      }
+    },
+
+    /**
+     * Play a sound from the current time (0 by default).
+     * @param  {String}   sprite   (optional) Plays from the specified position in the sound sprite definition.
+     * @param  {Function} callback (optional) Returns the unique playback id for this sound instance.
+     * @return {Howl}
+     */
+    play: function(sprite, callback) {
+      var self = this;
+
+      // if no sprite was passed but a callback was, update the variables
+      if (typeof sprite === 'function') {
+        callback = sprite;
+      }
+
+      // use the default sprite if none is passed
+      if (!sprite || typeof sprite === 'function') {
+        sprite = '_default';
+      }
+
+      // if the sound hasn't been loaded, add it to the event queue
+      if (!self._loaded) {
+        self.on('load', function() {
+          self.play(sprite, callback);
+        });
+
+        return self;
+      }
+
+      // if the sprite doesn't exist, play nothing
+      if (!self._sprite[sprite]) {
+        if (typeof callback === 'function') callback();
+        return self;
+      }
+
+      // get the node to playback
+      self._inactiveNode(function(node) {
+        // persist the sprite being played
+        node._sprite = sprite;
+
+        // determine where to start playing from
+        var pos = (node._pos > 0) ? node._pos : self._sprite[sprite][0] / 1000;
+
+        // determine how long to play for
+        var duration = 0;
+        if (self._webAudio) {
+          duration = self._sprite[sprite][1] / 1000 - node._pos;
+          if (node._pos > 0) {
+            pos = self._sprite[sprite][0] / 1000 + pos;
+          }
+        } else {
+          duration = self._sprite[sprite][1] / 1000 - (pos - self._sprite[sprite][0] / 1000);
+        }
+
+        // determine if this sound should be looped
+        var loop = !!(self._loop || self._sprite[sprite][2]);
+
+        // set timer to fire the 'onend' event
+        var soundId = (typeof callback === 'string') ? callback : Math.round(Date.now() * Math.random()) + '',
+          timerId;
+        (function() {
+          var data = {
+            id: soundId,
+            sprite: sprite,
+            loop: loop
+          };
+          timerId = setTimeout(function() {
+            // if looping, restart the track
+            if (!self._webAudio && loop) {
+              self.stop(data.id).play(sprite, data.id);
+            }
+
+            // set web audio node to paused at end
+            if (self._webAudio && !loop) {
+              self._nodeById(data.id).paused = true;
+              self._nodeById(data.id)._pos = 0;
+
+              // clear the end timer
+              self._clearEndTimer(data.id);
+            }
+
+            // end the track if it is HTML audio and a sprite
+            if (!self._webAudio && !loop) {
+              self.stop(data.id);
+            }
+
+            // fire ended event
+            self.on('end', soundId);
+          }, duration * 1000);
+
+          // store the reference to the timer
+          self._onendTimer.push({timer: timerId, id: data.id});
+        })();
+
+        if (self._webAudio) {
+          var loopStart = self._sprite[sprite][0] / 1000,
+            loopEnd = self._sprite[sprite][1] / 1000;
+
+          // set the play id to this node and load into context
+          node.id = soundId;
+          node.paused = false;
+          refreshBuffer(self, [loop, loopStart, loopEnd], soundId);
+          self._playStart = ctx.currentTime;
+          node.gain.value = self._volume;
+
+          if (typeof node.bufferSource.start === 'undefined') {
+            node.bufferSource.noteGrainOn(0, pos, duration);
+          } else {
+            node.bufferSource.start(0, pos, duration);
+          }
+        } else {
+          if (node.readyState === 4 || !node.readyState && navigator.isCocoonJS) {
+            node.readyState = 4;
+            node.id = soundId;
+            node.currentTime = pos;
+            node.muted = Howler._muted || node.muted;
+            node.volume = self._volume * Howler.volume();
+            setTimeout(function() { node.play(); }, 0);
+          } else {
+            self._clearEndTimer(soundId);
+
+            (function(){
+              var sound = self,
+                playSprite = sprite,
+                fn = callback,
+                newNode = node;
+              var listener = function() {
+                sound.play(playSprite, fn);
+
+                // clear the event listener
+                newNode.removeEventListener('canplaythrough', listener, false);
+              };
+              newNode.addEventListener('canplaythrough', listener, false);
+            })();
+
+            return self;
+          }
+        }
+
+        // fire the play event and send the soundId back in the callback
+        self.on('play');
+        if (typeof callback === 'function') callback(soundId);
+
+        return self;
+      });
+
+      return self;
+    },
+
+    /**
+     * Pause playback and save the current position.
+     * @param {String} id (optional) The play instance ID.
+     * @return {Howl}
+     */
+    pause: function(id) {
+      var self = this;
+
+      // if the sound hasn't been loaded, add it to the event queue
+      if (!self._loaded) {
+        self.on('play', function() {
+          self.pause(id);
+        });
+
+        return self;
+      }
+
+      // clear 'onend' timer
+      self._clearEndTimer(id);
+
+      var activeNode = (id) ? self._nodeById(id) : self._activeNode();
+      if (activeNode) {
+        activeNode._pos = self.pos(null, id);
+
+        if (self._webAudio) {
+          // make sure the sound has been created
+          if (!activeNode.bufferSource || activeNode.paused) {
+            return self;
+          }
+
+          activeNode.paused = true;
+          if (typeof activeNode.bufferSource.stop === 'undefined') {
+            activeNode.bufferSource.noteOff(0);
+          } else {
+            activeNode.bufferSource.stop(0);
+          }
+        } else {
+          activeNode.pause();
+        }
+      }
+
+      self.on('pause');
+
+      return self;
+    },
+
+    /**
+     * Stop playback and reset to start.
+     * @param  {String} id  (optional) The play instance ID.
+     * @return {Howl}
+     */
+    stop: function(id) {
+      var self = this;
+
+      // if the sound hasn't been loaded, add it to the event queue
+      if (!self._loaded) {
+        self.on('play', function() {
+          self.stop(id);
+        });
+
+        return self;
+      }
+
+      // clear 'onend' timer
+      self._clearEndTimer(id);
+
+      var activeNode = (id) ? self._nodeById(id) : self._activeNode();
+      if (activeNode) {
+        activeNode._pos = 0;
+
+        if (self._webAudio) {
+          // make sure the sound has been created
+          if (!activeNode.bufferSource || activeNode.paused) {
+            return self;
+          }
+
+          activeNode.paused = true;
+
+          if (typeof activeNode.bufferSource.stop === 'undefined') {
+            activeNode.bufferSource.noteOff(0);
+          } else {
+            activeNode.bufferSource.stop(0);
+          }
+        } else if (!isNaN(activeNode.duration)) {
+          activeNode.pause();
+          activeNode.currentTime = 0;
+        }
+      }
+
+      return self;
+    },
+
+    /**
+     * Mute this sound.
+     * @param  {String} id (optional) The play instance ID.
+     * @return {Howl}
+     */
+    mute: function(id) {
+      var self = this;
+
+      // if the sound hasn't been loaded, add it to the event queue
+      if (!self._loaded) {
+        self.on('play', function() {
+          self.mute(id);
+        });
+
+        return self;
+      }
+
+      var activeNode = (id) ? self._nodeById(id) : self._activeNode();
+      if (activeNode) {
+        if (self._webAudio) {
+          activeNode.gain.value = 0;
+        } else {
+          activeNode.muted = true;
+        }
+      }
+
+      return self;
+    },
+
+    /**
+     * Unmute this sound.
+     * @param  {String} id (optional) The play instance ID.
+     * @return {Howl}
+     */
+    unmute: function(id) {
+      var self = this;
+
+      // if the sound hasn't been loaded, add it to the event queue
+      if (!self._loaded) {
+        self.on('play', function() {
+          self.unmute(id);
+        });
+
+        return self;
+      }
+
+      var activeNode = (id) ? self._nodeById(id) : self._activeNode();
+      if (activeNode) {
+        if (self._webAudio) {
+          activeNode.gain.value = self._volume;
+        } else {
+          activeNode.muted = false;
+        }
+      }
+
+      return self;
+    },
+
+    /**
+     * Get/set volume of this sound.
+     * @param  {Float}  vol Volume from 0.0 to 1.0.
+     * @param  {String} id  (optional) The play instance ID.
+     * @return {Howl/Float}     Returns self or current volume.
+     */
+    volume: function(vol, id) {
+      var self = this;
+
+      // make sure volume is a number
+      vol = parseFloat(vol);
+
+      if (vol >= 0 && vol <= 1) {
+        self._volume = vol;
+
+        // if the sound hasn't been loaded, add it to the event queue
+        if (!self._loaded) {
+          self.on('play', function() {
+            self.volume(vol, id);
+          });
+
+          return self;
+        }
+
+        var activeNode = (id) ? self._nodeById(id) : self._activeNode();
+        if (activeNode) {
+          if (self._webAudio) {
+            activeNode.gain.value = vol;
+          } else {
+            activeNode.volume = vol * Howler.volume();
+          }
+        }
+
+        return self;
+      } else {
+        return self._volume;
+      }
+    },
+
+    /**
+     * Get/set whether to loop the sound.
+     * @param  {Boolean} loop To loop or not to loop, that is the question.
+     * @return {Howl/Boolean}      Returns self or current looping value.
+     */
+    loop: function(loop) {
+      var self = this;
+
+      if (typeof loop === 'boolean') {
+        self._loop = loop;
+
+        return self;
+      } else {
+        return self._loop;
+      }
+    },
+
+    /**
+     * Get/set sound sprite definition.
+     * @param  {Object} sprite Example: {spriteName: [offset, duration, loop]}
+     *                @param {Integer} offset   Where to begin playback in milliseconds
+     *                @param {Integer} duration How long to play in milliseconds
+     *                @param {Boolean} loop     (optional) Set true to loop this sprite
+     * @return {Howl}        Returns current sprite sheet or self.
+     */
+    sprite: function(sprite) {
+      var self = this;
+
+      if (typeof sprite === 'object') {
+        self._sprite = sprite;
+
+        return self;
+      } else {
+        return self._sprite;
+      }
+    },
+
+    /**
+     * Get/set the position of playback.
+     * @param  {Float}  pos The position to move current playback to.
+     * @param  {String} id  (optional) The play instance ID.
+     * @return {Howl/Float}      Returns self or current playback position.
+     */
+    pos: function(pos, id) {
+      var self = this;
+
+      // if the sound hasn't been loaded, add it to the event queue
+      if (!self._loaded) {
+        self.on('load', function() {
+          self.pos(pos);
+        });
+
+        return typeof pos === 'number' ? self : self._pos || 0;
+      }
+
+      // make sure we are dealing with a number for pos
+      pos = parseFloat(pos);
+
+      var activeNode = (id) ? self._nodeById(id) : self._activeNode();
+      if (activeNode) {
+        if (pos >= 0) {
+          self.pause(id);
+          activeNode._pos = pos;
+          self.play(activeNode._sprite, id);
+
+          return self;
+        } else {
+          return self._webAudio ? activeNode._pos + (ctx.currentTime - self._playStart) : activeNode.currentTime;
+        }
+      } else if (pos >= 0) {
+        return self;
+      } else {
+        // find the first inactive node to return the pos for
+        for (var i=0; i<self._audioNode.length; i++) {
+          if (self._audioNode[i].paused && self._audioNode[i].readyState === 4) {
+            return (self._webAudio) ? self._audioNode[i]._pos : self._audioNode[i].currentTime;
+          }
+        }
+      }
+    },
+
+    /**
+     * Get/set the 3D position of the audio source.
+     * The most common usage is to set the 'x' position
+     * to affect the left/right ear panning. Setting any value higher than
+     * 1.0 will begin to decrease the volume of the sound as it moves further away.
+     * NOTE: This only works with Web Audio API, HTML5 Audio playback
+     * will not be affected.
+     * @param  {Float}  x  The x-position of the playback from -1000.0 to 1000.0
+     * @param  {Float}  y  The y-position of the playback from -1000.0 to 1000.0
+     * @param  {Float}  z  The z-position of the playback from -1000.0 to 1000.0
+     * @param  {String} id (optional) The play instance ID.
+     * @return {Howl/Array}   Returns self or the current 3D position: [x, y, z]
+     */
+    pos3d: function(x, y, z, id) {
+      var self = this;
+
+      // set a default for the optional 'y' & 'z'
+      y = (typeof y === 'undefined' || !y) ? 0 : y;
+      z = (typeof z === 'undefined' || !z) ? -0.5 : z;
+
+      // if the sound hasn't been loaded, add it to the event queue
+      if (!self._loaded) {
+        self.on('play', function() {
+          self.pos3d(x, y, z, id);
+        });
+
+        return self;
+      }
+
+      if (x >= 0 || x < 0) {
+        if (self._webAudio) {
+          var activeNode = (id) ? self._nodeById(id) : self._activeNode();
+          if (activeNode) {
+            self._pos3d = [x, y, z];
+            activeNode.panner.setPosition(x, y, z);
+            activeNode.panner.panningModel = self._model || 'HRTF';
+          }
+        }
+      } else {
+        return self._pos3d;
+      }
+
+      return self;
+    },
+
+    /**
+     * Fade a currently playing sound between two volumes.
+     * @param  {Number}   from     The volume to fade from (0.0 to 1.0).
+     * @param  {Number}   to       The volume to fade to (0.0 to 1.0).
+     * @param  {Number}   len      Time in milliseconds to fade.
+     * @param  {Function} callback (optional) Fired when the fade is complete.
+     * @param  {String}   id       (optional) The play instance ID.
+     * @return {Howl}
+     */
+    fade: function(from, to, len, callback, id) {
+      var self = this,
+        diff = Math.abs(from - to),
+        dir = from > to ? 'down' : 'up',
+        steps = diff / 0.01,
+        stepTime = len / steps;
+
+      // if the sound hasn't been loaded, add it to the event queue
+      if (!self._loaded) {
+        self.on('load', function() {
+          self.fade(from, to, len, callback, id);
+        });
+
+        return self;
+      }
+
+      // set the volume to the start position
+      self.volume(from, id);
+
+      for (var i=1; i<=steps; i++) {
+        (function() {
+          var change = self._volume + (dir === 'up' ? 0.01 : -0.01) * i,
+            vol = Math.round(1000 * change) / 1000,
+            toVol = to;
+
+          setTimeout(function() {
+            self.volume(vol, id);
+
+            if (vol === toVol) {
+              if (callback) callback();
+            }
+          }, stepTime * i);
+        })();
+      }
+    },
+
+    /**
+     * [DEPRECATED] Fade in the current sound.
+     * @param  {Float}    to      Volume to fade to (0.0 to 1.0).
+     * @param  {Number}   len     Time in milliseconds to fade.
+     * @param  {Function} callback
+     * @return {Howl}
+     */
+    fadeIn: function(to, len, callback) {
+      return this.volume(0).play().fade(0, to, len, callback);
+    },
+
+    /**
+     * [DEPRECATED] Fade out the current sound and pause when finished.
+     * @param  {Float}    to       Volume to fade to (0.0 to 1.0).
+     * @param  {Number}   len      Time in milliseconds to fade.
+     * @param  {Function} callback
+     * @param  {String}   id       (optional) The play instance ID.
+     * @return {Howl}
+     */
+    fadeOut: function(to, len, callback, id) {
+      var self = this;
+
+      return self.fade(self._volume, to, len, function() {
+        if (callback) callback();
+        self.pause(id);
+
+        // fire ended event
+        self.on('end');
+      }, id);
+    },
+
+    /**
+     * Get an audio node by ID.
+     * @return {Howl} Audio node.
+     */
+    _nodeById: function(id) {
+      var self = this,
+        node = self._audioNode[0];
+
+      // find the node with this ID
+      for (var i=0; i<self._audioNode.length; i++) {
+        if (self._audioNode[i].id === id) {
+          node = self._audioNode[i];
+          break;
+        }
+      }
+
+      return node;
+    },
+
+    /**
+     * Get the first active audio node.
+     * @return {Howl} Audio node.
+     */
+    _activeNode: function() {
+      var self = this,
+        node = null;
+
+      // find the first playing node
+      for (var i=0; i<self._audioNode.length; i++) {
+        if (!self._audioNode[i].paused) {
+          node = self._audioNode[i];
+          break;
+        }
+      }
+
+      // remove excess inactive nodes
+      self._drainPool();
+
+      return node;
+    },
+
+    /**
+     * Get the first inactive audio node.
+     * If there is none, create a new one and add it to the pool.
+     * @param  {Function} callback Function to call when the audio node is ready.
+     */
+    _inactiveNode: function(callback) {
+      var self = this,
+        node = null;
+
+      // find first inactive node to recycle
+      for (var i=0; i<self._audioNode.length; i++) {
+        if (self._audioNode[i].paused && self._audioNode[i].readyState === 4) {
+          // send the node back for use by the new play instance
+          callback(self._audioNode[i]);
+          node = true;
+          break;
+        }
+      }
+
+      // remove excess inactive nodes
+      self._drainPool();
+
+      if (node) {
+        return;
+      }
+
+      // create new node if there are no inactives
+      var newNode;
+      if (self._webAudio) {
+        newNode = self._setupAudioNode();
+        callback(newNode);
+      } else {
+        self.load();
+        newNode = self._audioNode[self._audioNode.length - 1];
+
+        // listen for the correct load event and fire the callback
+        var listenerEvent = navigator.isCocoonJS ? 'canplaythrough' : 'loadedmetadata';
+        var listener = function() {
+          newNode.removeEventListener(listenerEvent, listener, false);
+          callback(newNode);
+        };
+        newNode.addEventListener(listenerEvent, listener, false);
+      }
+    },
+
+    /**
+     * If there are more than 5 inactive audio nodes in the pool, clear out the rest.
+     */
+    _drainPool: function() {
+      var self = this,
+        inactive = 0,
+        i;
+
+      // count the number of inactive nodes
+      for (i=0; i<self._audioNode.length; i++) {
+        if (self._audioNode[i].paused) {
+          inactive++;
+        }
+      }
+
+      // remove excess inactive nodes
+      for (i=self._audioNode.length-1; i>=0; i--) {
+        if (inactive <= 5) {
+          break;
+        }
+
+        if (self._audioNode[i].paused) {
+          // disconnect the audio source if using Web Audio
+          if (self._webAudio) {
+            self._audioNode[i].disconnect(0);
+          }
+
+          inactive--;
+          self._audioNode.splice(i, 1);
+        }
+      }
+    },
+
+    /**
+     * Clear 'onend' timeout before it ends.
+     * @param  {String} soundId  The play instance ID.
+     */
+    _clearEndTimer: function(soundId) {
+      var self = this,
+        index = 0;
+
+      // loop through the timers to find the one associated with this sound
+      for (var i=0; i<self._onendTimer.length; i++) {
+        if (self._onendTimer[i].id === soundId) {
+          index = i;
+          break;
+        }
+      }
+
+      var timer = self._onendTimer[index];
+      if (timer) {
+        clearTimeout(timer.timer);
+        self._onendTimer.splice(index, 1);
+      }
+    },
+
+    /**
+     * Setup the gain node and panner for a Web Audio instance.
+     * @return {Object} The new audio node.
+     */
+    _setupAudioNode: function() {
+      var self = this,
+        node = self._audioNode,
+        index = self._audioNode.length;
+
+      // create gain node
+      node[index] = (typeof ctx.createGain === 'undefined') ? ctx.createGainNode() : ctx.createGain();
+      node[index].gain.value = self._volume;
+      node[index].paused = true;
+      node[index]._pos = 0;
+      node[index].readyState = 4;
+      node[index].connect(masterGain);
+
+      // create the panner
+      node[index].panner = ctx.createPanner();
+      node[index].panner.panningModel = self._model || 'equalpower';
+      node[index].panner.setPosition(self._pos3d[0], self._pos3d[1], self._pos3d[2]);
+      node[index].panner.connect(node[index]);
+
+      return node[index];
+    },
+
+    /**
+     * Call/set custom events.
+     * @param  {String}   event Event type.
+     * @param  {Function} fn    Function to call.
+     * @return {Howl}
+     */
+    on: function(event, fn) {
+      var self = this,
+        events = self['_on' + event];
+
+      if (typeof fn === 'function') {
+        events.push(fn);
+      } else {
+        for (var i=0; i<events.length; i++) {
+          if (fn) {
+            events[i].call(self, fn);
+          } else {
+            events[i].call(self);
+          }
+        }
+      }
+
+      return self;
+    },
+
+    /**
+     * Remove a custom event.
+     * @param  {String}   event Event type.
+     * @param  {Function} fn    Listener to remove.
+     * @return {Howl}
+     */
+    off: function(event, fn) {
+      var self = this,
+        events = self['_on' + event],
+        fnString = fn ? fn.toString() : null;
+
+      if (fnString) {
+        // loop through functions in the event for comparison
+        for (var i=0; i<events.length; i++) {
+          if (fnString === events[i].toString()) {
+            events.splice(i, 1);
+            break;
+          }
+        }
+      } else {
+        self['_on' + event] = [];
+      }
+
+      return self;
+    },
+
+    /**
+     * Unload and destroy the current Howl object.
+     * This will immediately stop all play instances attached to this sound.
+     */
+    unload: function() {
+      var self = this;
+
+      // stop playing any active nodes
+      var nodes = self._audioNode;
+      for (var i=0; i<self._audioNode.length; i++) {
+        // stop the sound if it is currently playing
+        if (!nodes[i].paused) {
+          self.stop(nodes[i].id);
+          self.on('end', nodes[i].id);
+        }
+
+        if (!self._webAudio) {
+          // remove the source if using HTML5 Audio
+          nodes[i].src = '';
+        } else {
+          // disconnect the output from the master gain
+          nodes[i].disconnect(0);
+        }
+      }
+
+      // make sure all timeouts are cleared
+      for (i=0; i<self._onendTimer.length; i++) {
+        clearTimeout(self._onendTimer[i].timer);
+      }
+
+      // remove the reference in the global Howler object
+      var index = Howler._howls.indexOf(self);
+      if (index !== null && index >= 0) {
+        Howler._howls.splice(index, 1);
+      }
+
+      // delete this sound from the cache
+      delete cache[self._src];
+      self = null;
     }
-  });
 
-  socket.on('boot', function () {
-    clearTimeout(nextStep);
-    drawMessage('Waiting for opponent');
-  });
+  };
 
-  bgCtx.beginPath();
+  // only define these functions when using WebAudio
+  if (usingWebAudio) {
 
-  for (var i = 3; i >= 0; i--) {
-    bgCtx.moveTo((width / 3) * i, 0);
-    bgCtx.lineTo((width / 3 ) * i, height);
+    /**
+     * Buffer a sound from URL (or from cache) and decode to audio source (Web Audio API).
+     * @param  {Object} obj The Howl object for the sound to load.
+     * @param  {String} url The path to the sound file.
+     */
+    var loadBuffer = function(obj, url) {
+      // check if the buffer has already been cached
+      if (url in cache) {
+        // set the duration from the cache
+        obj._duration = cache[url].duration;
 
-    bgCtx.moveTo(0, (height / 3) * i);
-    bgCtx.lineTo(width, (height / 3) * i);
+        // load the sound into this object
+        loadSound(obj);
+        return;
+      }
+      
+      if (/^data:[^;]+;base64,/.test(url)) {
+        // Decode base64 data-URIs because some browsers cannot load data-URIs with XMLHttpRequest.
+        var data = atob(url.split(',')[1]);
+        var dataView = new Uint8Array(data.length);
+        for (var i=0; i<data.length; ++i) {
+          dataView[i] = data.charCodeAt(i);
+        }
+        
+        decodeAudioData(dataView.buffer, obj, url);
+      } else {
+        // load the buffer from the URL
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', url, true);
+        xhr.responseType = 'arraybuffer';
+        xhr.onload = function() {
+          decodeAudioData(xhr.response, obj, url);
+        };
+        xhr.onerror = function() {
+          // if there is an error, switch the sound to HTML Audio
+          if (obj._webAudio) {
+            obj._buffer = true;
+            obj._webAudio = false;
+            obj._audioNode = [];
+            delete obj._gainNode;
+            delete cache[url];
+            obj.load();
+          }
+        };
+        try {
+          xhr.send();
+        } catch (e) {
+          xhr.onerror();
+        }
+      }
+    };
+
+    /**
+     * Decode audio data from an array buffer.
+     * @param  {ArrayBuffer} arraybuffer The audio data.
+     * @param  {Object} obj The Howl object for the sound to load.
+     * @param  {String} url The path to the sound file.
+     */
+    var decodeAudioData = function(arraybuffer, obj, url) {
+      // decode the buffer into an audio source
+      ctx.decodeAudioData(
+        arraybuffer,
+        function(buffer) {
+          if (buffer) {
+            cache[url] = buffer;
+            loadSound(obj, buffer);
+          }
+        },
+        function(err) {
+          obj.on('loaderror');
+        }
+      );
+    };
+
+    /**
+     * Finishes loading the Web Audio API sound and fires the loaded event
+     * @param  {Object}  obj    The Howl object for the sound to load.
+     * @param  {Objecct} buffer The decoded buffer sound source.
+     */
+    var loadSound = function(obj, buffer) {
+      // set the duration
+      obj._duration = (buffer) ? buffer.duration : obj._duration;
+
+      // setup a sprite if none is defined
+      if (Object.getOwnPropertyNames(obj._sprite).length === 0) {
+        obj._sprite = {_default: [0, obj._duration * 1000]};
+      }
+
+      // fire the loaded event
+      if (!obj._loaded) {
+        obj._loaded = true;
+        obj.on('load');
+      }
+
+      if (obj._autoplay) {
+        obj.play();
+      }
+    };
+
+    /**
+     * Load the sound back into the buffer source.
+     * @param  {Object} obj   The sound to load.
+     * @param  {Array}  loop  Loop boolean, pos, and duration.
+     * @param  {String} id    (optional) The play instance ID.
+     */
+    var refreshBuffer = function(obj, loop, id) {
+      // determine which node to connect to
+      var node = obj._nodeById(id);
+
+      // setup the buffer source for playback
+      node.bufferSource = ctx.createBufferSource();
+      node.bufferSource.buffer = cache[obj._src];
+      node.bufferSource.connect(node.panner);
+      node.bufferSource.loop = loop[0];
+      if (loop[0]) {
+        node.bufferSource.loopStart = loop[1];
+        node.bufferSource.loopEnd = loop[1] + loop[2];
+      }
+      node.bufferSource.playbackRate.value = obj._rate;
+    };
+
   }
 
-  bgCtx.stroke();
-  bgCtx.closePath();
+  /**
+   * Add support for AMD (Asynchronous Module Definition) libraries such as require.js.
+   */
+  if (typeof define === 'function' && define.amd) {
+    define(function() {
+      return {
+        Howler: Howler,
+        Howl: Howl
+      };
+    });
+  }
 
-  game.addEventListener('click', function (event) {
-    handleClick(event);
-  }, false);
-})(400, 400);
+  /**
+   * Add support for CommonJS libraries such as browserify.
+   */
+  if (typeof exports !== 'undefined') {
+    exports.Howler = Howler;
+    exports.Howl = Howl;
+  }
+
+  // define globally in case AMD is not available or available but not used
+
+  if (typeof window !== 'undefined') {
+    window.Howler = Howler;
+    window.Howl = Howl;
+  }
+
+})();
+
+},{}],3:[function(require,module,exports){
+/**
+ * isMobile.js v0.3.4
+ *
+ * A simple library to detect Apple phones and tablets,
+ * Android phones and tablets, other mobile devices (like blackberry, mini-opera and windows phone),
+ * and any kind of seven inch device, via user agent sniffing.
+ *
+ * @author: Kai Mallea (kmallea@gmail.com)
+ *
+ * @license: http://creativecommons.org/publicdomain/zero/1.0/
+ */
+(function (global) {
+
+    var apple_phone         = /iPhone/i,
+        apple_ipod          = /iPod/i,
+        apple_tablet        = /iPad/i,
+        android_phone       = /(?=.*\bAndroid\b)(?=.*\bMobile\b)/i, // Match 'Android' AND 'Mobile'
+        android_tablet      = /Android/i,
+        windows_phone       = /IEMobile/i,
+        windows_tablet      = /(?=.*\bWindows\b)(?=.*\bARM\b)/i, // Match 'Windows' AND 'ARM'
+        other_blackberry    = /BlackBerry/i,
+        other_blackberry_10 = /BB10/i,
+        other_opera         = /Opera Mini/i,
+        other_firefox       = /(?=.*\bFirefox\b)(?=.*\bMobile\b)/i, // Match 'Firefox' AND 'Mobile'
+        seven_inch = new RegExp(
+            '(?:' +         // Non-capturing group
+
+            'Nexus 7' +     // Nexus 7
+
+            '|' +           // OR
+
+            'BNTV250' +     // B&N Nook Tablet 7 inch
+
+            '|' +           // OR
+
+            'Kindle Fire' + // Kindle Fire
+
+            '|' +           // OR
+
+            'Silk' +        // Kindle Fire, Silk Accelerated
+
+            '|' +           // OR
+
+            'GT-P1000' +    // Galaxy Tab 7 inch
+
+            ')',            // End non-capturing group
+
+            'i');           // Case-insensitive matching
+
+    var match = function(regex, userAgent) {
+        return regex.test(userAgent);
+    };
+
+    var IsMobileClass = function(userAgent) {
+        var ua = userAgent || navigator.userAgent;
+
+        this.apple = {
+            phone:  match(apple_phone, ua),
+            ipod:   match(apple_ipod, ua),
+            tablet: match(apple_tablet, ua),
+            device: match(apple_phone, ua) || match(apple_ipod, ua) || match(apple_tablet, ua)
+        };
+        this.android = {
+            phone:  match(android_phone, ua),
+            tablet: !match(android_phone, ua) && match(android_tablet, ua),
+            device: match(android_phone, ua) || match(android_tablet, ua)
+        };
+        this.windows = {
+            phone:  match(windows_phone, ua),
+            tablet: match(windows_tablet, ua),
+            device: match(windows_phone, ua) || match(windows_tablet, ua)
+        };
+        this.other = {
+            blackberry:   match(other_blackberry, ua),
+            blackberry10: match(other_blackberry_10, ua),
+            opera:        match(other_opera, ua),
+            firefox:      match(other_firefox, ua),
+            device:       match(other_blackberry, ua) || match(other_blackberry_10, ua) || match(other_opera, ua) || match(other_firefox, ua)
+        };
+        this.seven_inch = match(seven_inch, ua);
+        this.any = this.apple.device || this.android.device || this.windows.device || this.other.device || this.seven_inch;
+        // excludes 'other' devices and ipods, targeting touchscreen phones
+        this.phone = this.apple.phone || this.android.phone || this.windows.phone;
+        // excludes 7 inch devices, classifying as phone or tablet is left to the user
+        this.tablet = this.apple.tablet || this.android.tablet || this.windows.tablet;
+
+        if (typeof window === 'undefined') {
+            return this;
+        }
+    };
+
+    var instantiate = function() {
+        var IM = new IsMobileClass();
+        IM.Class = IsMobileClass;
+        return IM;
+    };
+
+    if (typeof module != 'undefined' && module.exports && typeof window === 'undefined') {
+        //node
+        module.exports = IsMobileClass;
+    } else if (typeof module != 'undefined' && module.exports && typeof window !== 'undefined') {
+        //browserify
+        module.exports = instantiate();
+    } else if (typeof define === 'function' && define.amd) {
+        //AMD
+        define(instantiate());
+    } else {
+        global.isMobile = instantiate();
+    }
+
+})(this);
+
+},{}]},{},[1]);
