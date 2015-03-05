@@ -22,5 +22,7 @@ I wrote this while half-asleep on a plane. It's really messy. By viewing the sou
  1. Take it as <del>best</del>good-practice in *any* way, or
  2. judge me.
 
+One looking to implement a better server would do well to [read](https://developer.valvesoftware.com/wiki/Source_Multiplayer_Networking) [these](http://www.gabrielgambetta.com/fpm1.html).
+
 ## License
 MIT, have at 'er.
